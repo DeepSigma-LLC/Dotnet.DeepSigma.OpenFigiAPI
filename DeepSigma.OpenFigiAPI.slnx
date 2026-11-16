@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="DeepSigma.OpenFigiAPI/DeepSigma.OpenFigiAPI.csproj" />
+  <Project Path="DeepSigma.OpenFigiAPI.Tests/DeepSigma.OpenFigiAPI.Tests.csproj" />
+</Solution>

@@ -1,0 +1,7 @@
+[
+  {"data": [{"figi": "BBG000BLNNH6", "securityType": "Common Stock", "marketSector": "Equity", "ticker": "IBM", "name": "INTL BUSINESS MACHINES CORP", "exchCode": "US", "shareClassFIGI": "BBG001S5S399", "compositeFIGI": "BBG000BLNNH6", "securityType2": "Common Stock", "securityDescription": "IBM"}]},
+  {"error": "No identifier found."},
+  {"warning": "No identifier found."},
+  {"error": "Too many results: the job matched more than 15000 FIGIs."},
+  {"data": [{"figi": "BBG00XXXXXX1", "securityType": null, "marketSector": null, "ticker": null, "name": null, "exchCode": null, "shareClassFIGI": null, "compositeFIGI": null, "securityType2": null, "securityDescription": null, "metadata": "Metadata N/A"}]}
+]

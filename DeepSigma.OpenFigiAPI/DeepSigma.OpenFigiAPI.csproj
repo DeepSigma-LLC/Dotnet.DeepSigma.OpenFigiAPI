@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsPackable>true</IsPackable>
+    <PackageId>DeepSigma.OpenFigiAPI</PackageId>
+    <Title>DeepSigma.OpenFigiAPI</Title>
+    <Version>1.0.0</Version>
+    <Authors>DeepSigma LLC</Authors>
+    <Description>C# library for the OpenFIGI API: mapping identifiers to FIGIs, search and filter with paging, and the valid values of each field; the documented rules checked before a request is sent; every response read by a public parser, so a saved response is read without a web request.</Description>
+    <PackageTags>OpenFIGI;FIGI;financial instruments;identifiers;security master</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/DeepSigma-LLC/Dotnet.DeepSigma.OpenFigiAPI</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/DeepSigma-LLC/Dotnet.DeepSigma.OpenFigiAPI</RepositoryUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>DeepSigma.png</PackageIcon>
+    <AssemblyVersion>$(Version)</AssemblyVersion>
+    <FileVersion>$(Version)</FileVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="Assets\DeepSigma.png" Pack="true" PackagePath="\" />
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The DeepSigma web handlers (retry honoring retry-after, request spacing), from the DeepSigma-LLC package feed. -->
+    <PackageReference Include="DeepSigma.DataAccess.Web" Version="3.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DeepSigma.OpenFigiAPI.Tests" />
+  </ItemGroup>
+
+</Project>
