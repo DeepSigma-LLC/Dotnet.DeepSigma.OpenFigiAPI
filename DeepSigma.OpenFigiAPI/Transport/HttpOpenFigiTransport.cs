@@ -41,20 +41,23 @@ public sealed class HttpOpenFigiTransport : IOpenFigiTransport, IDisposable
     /// <inheritdoc/>
     public bool SendsApiKey => _options.HasApiKey;
 
-    /// <summary>The group's pipeline: retry, then (when limiting) spacing, then the handler that sends.</summary>
-    private HttpClient Client(HttpMessageHandler inner, string throttleKey, int perMinute)
-    {
-        HttpMessageHandler pipeline = new NotDisposing(inner);
-        if (_options.LimitRequests && perMinute > 0)
-            pipeline = new MinIntervalDelegatingHandler(new MinIntervalOptions { Key = throttleKey, MinInterval = TimeSpan.FromMinutes(1) / perMinute },
-                                                        _options.Clock) { InnerHandler = pipeline };
-        pipeline = new RetryAfterDelegatingHandler(new RetryAfterOptions
+    /// <summary>The group's pipeline (<see cref="HttpPipeline"/>): retry, then (when limiting) spacing, then the handler
+    /// that sends, which the group's client shares with the other group and never disposes.</summary>
+    private HttpClient Client(HttpMessageHandler inner, string throttleKey, int perMinute) =>
+        HttpPipeline.CreateClient(inner, new HttpPipelineOptions
         {
-            MaxAttempts = _options.MaxAttempts, BaseBackoff = _options.BaseBackoff, MaxBackoff = _options.MaxBackoff,
-            RetryStatusCodes = [HttpStatusCode.TooManyRequests, HttpStatusCode.InternalServerError, HttpStatusCode.ServiceUnavailable],
-        }, _options.Clock) { InnerHandler = pipeline };
-        return new HttpClient(pipeline) { BaseAddress = _options.BaseAddress, Timeout = System.Threading.Timeout.InfiniteTimeSpan };
-    }
+            Retry = new RetryAfterOptions
+            {
+                MaxAttempts = _options.MaxAttempts, BaseBackoff = _options.BaseBackoff, MaxBackoff = _options.MaxBackoff,
+                RetryStatusCodes = [HttpStatusCode.TooManyRequests, HttpStatusCode.InternalServerError, HttpStatusCode.ServiceUnavailable],
+            },
+            Throttle = _options.LimitRequests && perMinute > 0
+                ? new MinIntervalOptions { Key = throttleKey, MinInterval = TimeSpan.FromMinutes(1) / perMinute }
+                : null,
+            Clock = _options.Clock,
+            BaseAddress = _options.BaseAddress,
+            Timeout = System.Threading.Timeout.InfiniteTimeSpan,                // the call's own timeout covers every attempt
+        }, disposeHandler: false);
 
     /// <summary>Sends the call through its group's pipeline and returns what the API answered, whatever its status.</summary>
     public async Task<OpenFigiResponse> SendAsync(OpenFigiRequest request, CancellationToken cancellation = default)
@@ -69,13 +72,7 @@ public sealed class HttpOpenFigiTransport : IOpenFigiTransport, IDisposable
         timeout.CancelAfter(_options.Timeout);
         using var response = await _clients[request.Group].SendAsync(message, timeout.Token);
         var body = await response.Content.ReadAsStringAsync(timeout.Token);
-        TimeSpan? retryAfter = response.Headers.RetryAfter switch
-        {
-            { Delta: { } delta } => delta,
-            { Date: { } date } => date - _options.Clock.GetUtcNow(),
-            _ => null,
-        };
-        return new OpenFigiResponse((int)response.StatusCode, body, retryAfter);
+        return new OpenFigiResponse((int)response.StatusCode, body, RetryAfterHeader.GetDelay(response, _options.Clock));
     }
 
     /// <summary>Disposes the pipelines and the handler the transport made; one passed in is its owner's.</summary>
@@ -83,11 +80,5 @@ public sealed class HttpOpenFigiTransport : IOpenFigiTransport, IDisposable
     {
         foreach (var client in _clients.Values) client.Dispose();
         _ownedHandler?.Dispose();
-    }
-
-    /// <summary>Passes requests to a handler the transport does not own, so disposing a pipeline leaves it open.</summary>
-    private sealed class NotDisposing(HttpMessageHandler inner) : DelegatingHandler(inner)
-    {
-        protected override void Dispose(bool disposing) { }
     }
 }

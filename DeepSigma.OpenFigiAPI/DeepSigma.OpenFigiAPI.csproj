@@ -5,10 +5,10 @@
     <IsPackable>true</IsPackable>
     <PackageId>DeepSigma.OpenFigiAPI</PackageId>
     <Title>DeepSigma.OpenFigiAPI</Title>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Authors>DeepSigma LLC</Authors>
     <Description>C# library for the OpenFIGI API: mapping identifiers to FIGIs, search and filter with paging, and the valid values of each field; the documented rules checked before a request is sent; every response read by a public parser, so a saved response is read without a web request.</Description>
-    <PackageReleaseNotes>1.1.0: a mapping job written alone and read back (OpenFigiRequests.MappingJobJson, OpenFigiParser.ParseMappingJob); mapping answers written back in the API's shape (OpenFigiResponses); each request names its call and field (OpenFigiRequest.Call, Field); the README on market codes.</PackageReleaseNotes>
+    <PackageReleaseNotes>1.2.0: on DeepSigma.DataAccess.Web 4.0.0; the transport builds its clients with HttpPipeline and reads Retry-After with RetryAfterHeader (no change to the API or its behaviour). 1.1.0: a mapping job written alone and read back (OpenFigiRequests.MappingJobJson, OpenFigiParser.ParseMappingJob); mapping answers written back in the API's shape (OpenFigiResponses); each request names its call and field (OpenFigiRequest.Call, Field); the README on market codes.</PackageReleaseNotes>
     <PackageTags>OpenFIGI;FIGI;financial instruments;identifiers;security master</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/DeepSigma-LLC/Dotnet.DeepSigma.OpenFigiAPI</PackageProjectUrl>
@@ -27,7 +27,7 @@
 
   <ItemGroup>
     <!-- The DeepSigma web handlers (retry honoring retry-after, request spacing), from the DeepSigma-LLC package feed. -->
-    <PackageReference Include="DeepSigma.DataAccess.Web" Version="3.0.0" />
+    <PackageReference Include="DeepSigma.DataAccess.Web" Version="4.0.0" />
   </ItemGroup>
 
   <ItemGroup>
