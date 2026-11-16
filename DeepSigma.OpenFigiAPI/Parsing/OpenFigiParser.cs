@@ -19,10 +19,10 @@ public static class OpenFigiParser
     {
         using var document = Parse(json);
         if (document.RootElement.ValueKind != JsonValueKind.Array)
-            throw new OpenFigiException(200, $"a mapping response is a JSON array, not {document.RootElement.ValueKind}");
+            throw new OpenFigiException(null, $"a mapping response is a JSON array, not {document.RootElement.ValueKind}");
         var results = document.RootElement.EnumerateArray().Select(element => ParseMappingResult(element.Clone())).ToList();
         if (jobCount is { } expected && results.Count != expected)
-            throw new OpenFigiException(200, $"the mapping response has {results.Count} results for {expected} jobs");
+            throw new OpenFigiException(null, $"the mapping response has {results.Count} results for {expected} jobs");
         return results;
     }
 
@@ -49,16 +49,16 @@ public static class OpenFigiParser
     {
         using var document = Parse(json);
         var root = document.RootElement;
-        if (Text(root, "error") is { } error) throw new OpenFigiException(200, error);
+        if (Text(root, "error") is { } error) throw new OpenFigiException(null, error);
         if (!root.TryGetProperty("values", out var values) || values.ValueKind != JsonValueKind.Array)
-            throw new OpenFigiException(200, Text(root, "warning") ?? "a values response has no values");
+            throw new OpenFigiException(null, Text(root, "warning") ?? "a values response has no values");
         return values.EnumerateArray().Select(value => value.ValueKind == JsonValueKind.String ? value.GetString()! : value.GetRawText()).ToList();
     }
 
     /// <summary>One record of a mapping, search or filter response.</summary>
     public static FigiRecord ParseRecord(JsonElement element) => new()
     {
-        Figi = Text(element, "figi") ?? throw new OpenFigiException(200, "a record has no figi"),
+        Figi = Text(element, "figi") ?? throw new OpenFigiException(null, "a record has no figi"),
         Name = Text(element, "name"),
         Ticker = Text(element, "ticker"),
         ExchangeCode = Text(element, "exchCode"),
@@ -105,8 +105,8 @@ public static class OpenFigiParser
     {
         using var document = Parse(json);
         var root = document.RootElement;
-        if (root.ValueKind != JsonValueKind.Object) throw new OpenFigiException(200, $"a {call} response is a JSON object, not {root.ValueKind}");
-        if (Text(root, "error") is { } error) throw new OpenFigiException(200, $"OpenFIGI {call}: {error}");
+        if (root.ValueKind != JsonValueKind.Object) throw new OpenFigiException(null, $"a {call} response is a JSON object, not {root.ValueKind}");
+        if (Text(root, "error") is { } error) throw new OpenFigiException(null, $"OpenFIGI {call}: {error}");
         var records = root.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array
             ? data.EnumerateArray().Select(ParseRecord).ToList()
             : [];
@@ -123,7 +123,7 @@ public static class OpenFigiParser
         }
         catch (JsonException exception)
         {
-            throw new OpenFigiException(200, $"the response is not JSON: {exception.Message}", inner: exception);
+            throw new OpenFigiException(null, $"the response is not JSON: {exception.Message}", inner: exception);
         }
     }
 

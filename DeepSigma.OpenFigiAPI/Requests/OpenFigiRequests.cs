@@ -24,11 +24,24 @@ public static class OpenFigiRequests
         return array.ToJsonString();
     }
 
-    /// <summary>The body of <c>POST /v3/search</c> or <c>/v3/filter</c>, from the page <paramref name="start"/> names (the
-    /// previous page's <c>next</c>; null for the first).</summary>
-    public static string QueryBody(FigiQuery query, bool queryRequired, string? start = null)
+    /// <summary>The body of <c>POST /v3/search</c>, from the page <paramref name="start"/> names (the previous page's
+    /// <c>next</c>; null for the first). A search needs keywords.</summary>
+    public static string SearchBody(FigiQuery query, string? start = null)
     {
-        OpenFigiRules.Check(query, queryRequired);
+        OpenFigiRules.CheckSearch(query);
+        return QueryBody(query, start);
+    }
+
+    /// <summary>The body of <c>POST /v3/filter</c>, from the page <paramref name="start"/> names. A filter may have no
+    /// keywords: its filters alone.</summary>
+    public static string FilterBody(FigiQuery query, string? start = null)
+    {
+        OpenFigiRules.CheckFilter(query);
+        return QueryBody(query, start);
+    }
+
+    private static string QueryBody(FigiQuery query, string? start)
+    {
         var item = new JsonObject();
         if (!string.IsNullOrWhiteSpace(query.Query)) item["query"] = query.Query;
         if (start is not null) item["start"] = start;

@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Headers;
 using Xunit;
 
 namespace DeepSigma.OpenFigiAPI.Tests;
@@ -10,27 +9,13 @@ public sealed class HttpTransportTests
 {
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
-    private sealed class FakeHandler(params Func<HttpResponseMessage>[] responses) : HttpMessageHandler
-    {
-        private int _next;
-        public List<(HttpRequestMessage Request, string? Body)> Received { get; } = [];
-
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            Received.Add((request, request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken)));
-            return responses[Math.Min(_next++, responses.Length - 1)]();   // a new message each time: the transport disposes it
-        }
-    }
-
-    private static Func<HttpResponseMessage> Status(HttpStatusCode status, string body = "", TimeSpan? retryAfter = null) => () =>
-    {
-        var response = new HttpResponseMessage(status) { Content = new StringContent(body) };
-        if (retryAfter is { } wait) response.Headers.RetryAfter = new RetryConditionHeaderValue(wait);
-        return response;
-    };
-
     private static readonly OpenFigiRequest Mapping = new(HttpMethod.Post, "/v3/mapping", """[{"idType":"ID_ISIN","idValue":"US0378331005"}]""",
                                                           OpenFigiCallGroup.Mapping);
+
+    private static async Task<OpenFigiResponse> Send(HttpOpenFigiTransport transport)
+    {
+        using (transport) return await transport.SendAsync(Mapping, Cancellation);
+    }
 
     private static OpenFigiOptions Fast(string? key = null) =>
         new() { ApiKey = key, BaseBackoff = TimeSpan.Zero, MaxBackoff = TimeSpan.Zero, LimitRequests = false };
@@ -38,8 +23,8 @@ public sealed class HttpTransportTests
     [Fact]
     public async Task ARequestCarriesTheKeyAndItsJsonBody()
     {
-        var handler = new FakeHandler(Status(HttpStatusCode.OK, "[]"));
-        var transport = new HttpOpenFigiTransport(Fast("the-key"), handler);
+        var handler = new FakeHandler(FakeHandler.Status(HttpStatusCode.OK, "[]"));
+        using var transport = new HttpOpenFigiTransport(Fast("the-key"), handler);
 
         var response = await transport.SendAsync(Mapping, Cancellation);
 
@@ -54,17 +39,17 @@ public sealed class HttpTransportTests
     [Fact]
     public async Task WithoutAKeyNoKeyIsSent()
     {
-        var handler = new FakeHandler(Status(HttpStatusCode.OK, "[]"));
-        await new HttpOpenFigiTransport(Fast(), handler).SendAsync(Mapping, Cancellation);
+        var handler = new FakeHandler(FakeHandler.Status(HttpStatusCode.OK, "[]"));
+        await Send(new HttpOpenFigiTransport(Fast(), handler));
         Assert.False(handler.Received[0].Request.Headers.Contains("X-OPENFIGI-APIKEY"));
     }
 
     [Fact]
     public async Task ARateLimitAndAnOutageAreRetried()
     {
-        var handler = new FakeHandler(Status(HttpStatusCode.TooManyRequests, "Too many requests", TimeSpan.Zero),
-                                      Status(HttpStatusCode.ServiceUnavailable), Status(HttpStatusCode.OK, "[]"));
-        var response = await new HttpOpenFigiTransport(Fast(), handler).SendAsync(Mapping, Cancellation);
+        var handler = new FakeHandler(FakeHandler.Status(HttpStatusCode.TooManyRequests, "Too many requests", TimeSpan.Zero),
+                                      FakeHandler.Status(HttpStatusCode.ServiceUnavailable), FakeHandler.Status(HttpStatusCode.OK, "[]"));
+        var response = await Send(new HttpOpenFigiTransport(Fast(), handler));
         Assert.Equal(200, response.StatusCode);
         Assert.Equal(3, handler.Received.Count);
     }
@@ -72,8 +57,8 @@ public sealed class HttpTransportTests
     [Fact]
     public async Task RetriesStopAtTheMaximumAndTheLastAnswerIsReturned()
     {
-        var handler = new FakeHandler(Status(HttpStatusCode.ServiceUnavailable, "down"));
-        var response = await new HttpOpenFigiTransport(Fast() with { MaxAttempts = 3 }, handler).SendAsync(Mapping, Cancellation);
+        var handler = new FakeHandler(FakeHandler.Status(HttpStatusCode.ServiceUnavailable, "down"));
+        var response = await Send(new HttpOpenFigiTransport(Fast() with { MaxAttempts = 3 }, handler));
         Assert.Equal((503, "down"), (response.StatusCode, response.Body));
         Assert.Equal(3, handler.Received.Count);
     }
@@ -84,8 +69,8 @@ public sealed class HttpTransportTests
     [InlineData(HttpStatusCode.RequestEntityTooLarge)]
     public async Task ARefusalIsReturnedAtOnceNotRetried(HttpStatusCode status)
     {
-        var handler = new FakeHandler(Status(status, "refused"), Status(HttpStatusCode.OK, "[]"));
-        var response = await new HttpOpenFigiTransport(Fast(), handler).SendAsync(Mapping, Cancellation);
+        var handler = new FakeHandler(FakeHandler.Status(status, "refused"), FakeHandler.Status(HttpStatusCode.OK, "[]"));
+        var response = await Send(new HttpOpenFigiTransport(Fast(), handler));
         Assert.Equal((int)status, response.StatusCode);
         Assert.Single(handler.Received);
     }
@@ -93,8 +78,8 @@ public sealed class HttpTransportTests
     [Fact]
     public async Task ARetryAfterIsPassedOnWhenTheLastAttemptIsALimit()
     {
-        var handler = new FakeHandler(Status(HttpStatusCode.TooManyRequests, "Too many requests", TimeSpan.FromSeconds(42)));
-        var response = await new HttpOpenFigiTransport(Fast() with { MaxAttempts = 1 }, handler).SendAsync(Mapping, Cancellation);
+        var handler = new FakeHandler(FakeHandler.Status(HttpStatusCode.TooManyRequests, "Too many requests", TimeSpan.FromSeconds(42)));
+        var response = await Send(new HttpOpenFigiTransport(Fast() with { MaxAttempts = 1 }, handler));
         Assert.Equal((429, TimeSpan.FromSeconds(42)), (response.StatusCode, response.RetryAfter));
     }
 
@@ -102,8 +87,8 @@ public sealed class HttpTransportTests
     public async Task RequestsAreSpacedToTheLimitOfTheirGroup()
     {
         // 600 a minute: one every 100 ms, so three mapping requests take at least 200 ms; a search is spaced on its own
-        var handler = new FakeHandler(Status(HttpStatusCode.OK, "[]"));
-        var transport = new HttpOpenFigiTransport(Fast() with { LimitRequests = true, MappingRequestsPerMinute = 600 }, handler);
+        var handler = new FakeHandler(FakeHandler.Status(HttpStatusCode.OK, "[]"));
+        using var transport = new HttpOpenFigiTransport(Fast() with { LimitRequests = true, MappingRequestsPerMinute = 600 }, handler);
         var started = System.Diagnostics.Stopwatch.StartNew();
         for (var i = 0; i < 3; i++) await transport.SendAsync(Mapping, Cancellation);
         Assert.True(started.Elapsed >= TimeSpan.FromMilliseconds(190), $"three requests took {started.Elapsed.TotalMilliseconds} ms");

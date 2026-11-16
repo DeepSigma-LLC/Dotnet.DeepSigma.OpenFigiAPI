@@ -10,26 +10,26 @@ namespace DeepSigma.OpenFigiAPI;
 /// <see cref="OpenFigiParser"/>. A request the API refuses throws an <see cref="OpenFigiException"/>; within a mapping
 /// response, each job has its own result.
 /// </summary>
-/// <param name="transport">How calls travel: <see cref="HttpOpenFigiTransport"/>, or a caller's own.</param>
-/// <param name="hasApiKey">Whether the transport sends a key: the API then takes 100 jobs a request instead of 10.</param>
-public sealed class OpenFigiClient(IOpenFigiTransport transport, bool hasApiKey)
+/// <param name="transport">How calls travel: <see cref="HttpOpenFigiTransport"/>, or a caller's own. Whether it sends a key
+/// (<see cref="IOpenFigiTransport.SendsApiKey"/>) sets the size of mapping batches.</param>
+public sealed class OpenFigiClient(IOpenFigiTransport transport)
 {
     /// <summary>Jobs per mapping request without a key, and with one.</summary>
     public const int JobsPerRequestWithoutKey = 10, JobsPerRequestWithKey = 100;
 
     private readonly ConcurrentDictionary<string, IReadOnlyList<string>> _values = new();
 
-    /// <summary>A client calling the API directly (<see cref="HttpOpenFigiTransport"/>).</summary>
+    /// <summary>A client calling the API directly (<see cref="HttpOpenFigiTransport"/>). The transport it makes lives as long
+    /// as the client; a program that makes and drops many clients makes one transport and passes it instead.</summary>
     /// <param name="options">How to call the API; the defaults when null (no key).</param>
     /// <param name="handler">The handler that sends requests; a test passes a fake one (<see cref="HttpOpenFigiTransport"/>).</param>
     public static OpenFigiClient Create(OpenFigiOptions? options = null, HttpMessageHandler? handler = null)
     {
-        options ??= new OpenFigiOptions();
-        return new OpenFigiClient(new HttpOpenFigiTransport(options, handler), options.HasApiKey);
+        return new OpenFigiClient(new HttpOpenFigiTransport(options, handler));
     }
 
     /// <summary>How many jobs one mapping request carries: 10 without a key, 100 with one.</summary>
-    public int JobsPerRequest => hasApiKey ? JobsPerRequestWithKey : JobsPerRequestWithoutKey;
+    public int JobsPerRequest => transport.SendsApiKey ? JobsPerRequestWithKey : JobsPerRequestWithoutKey;
 
     // ------------------------------------------------------------------ mapping
 
@@ -42,7 +42,7 @@ public sealed class OpenFigiClient(IOpenFigiTransport transport, bool hasApiKey)
         var results = new List<MappingResult>(jobs.Count);
         foreach (var batch in jobs.Chunk(JobsPerRequest))
         {
-            var response = await SendAsync(new OpenFigiRequest(HttpMethod.Post, "/v3/mapping", OpenFigiRequests.MappingBody(batch), OpenFigiCallGroup.Mapping),
+            var response = await SendAsync(new OpenFigiRequest(HttpMethod.Post, ApiPaths.Mapping, OpenFigiRequests.MappingBody(batch), OpenFigiCallGroup.Mapping),
                                            cancellation);
             results.AddRange(OpenFigiParser.ParseMapping(response.Body, batch.Length));
         }
@@ -58,11 +58,11 @@ public sealed class OpenFigiClient(IOpenFigiTransport transport, bool hasApiKey)
     /// <summary>One page of a search (<c>/v3/search</c>): from the first page, or from <paramref name="start"/> (a page's
     /// <see cref="FigiPage.Next"/>).</summary>
     public Task<FigiPage> SearchPageAsync(FigiQuery query, string? start = null, CancellationToken cancellation = default) =>
-        PageAsync("/v3/search", query, queryRequired: true, start, OpenFigiParser.ParseSearchPage, cancellation);
+        PageAsync(ApiPaths.Search, OpenFigiRequests.SearchBody(query, start), OpenFigiParser.ParseSearchPage, cancellation);
 
     /// <summary>One page of a filter (<c>/v3/filter</c>, sorted by FIGI, with the total).</summary>
     public Task<FigiPage> FilterPageAsync(FigiQuery query, string? start = null, CancellationToken cancellation = default) =>
-        PageAsync("/v3/filter", query, queryRequired: false, start, OpenFigiParser.ParseFilterPage, cancellation);
+        PageAsync(ApiPaths.Filter, OpenFigiRequests.FilterBody(query, start), OpenFigiParser.ParseFilterPage, cancellation);
 
     /// <summary>Every record of a search, page after page, up to <paramref name="maxResults"/> when given.</summary>
     public IAsyncEnumerable<FigiRecord> SearchAsync(FigiQuery query, int? maxResults = null, CancellationToken cancellation = default) =>
@@ -79,8 +79,7 @@ public sealed class OpenFigiClient(IOpenFigiTransport transport, bool hasApiKey)
     public async Task<IReadOnlyList<string>> MappingValuesAsync(MappingField field, bool refresh = false, CancellationToken cancellation = default)
     {
         if (!refresh && _values.TryGetValue(field.Value, out var known)) return known;
-        var response = await SendAsync(new OpenFigiRequest(HttpMethod.Get, $"/v3/mapping/values/{Uri.EscapeDataString(field.Value)}", null,
-                                                           OpenFigiCallGroup.Mapping), cancellation);
+        var response = await SendAsync(new OpenFigiRequest(HttpMethod.Get, ApiPaths.MappingValues(field), null, OpenFigiCallGroup.Mapping), cancellation);
         var values = OpenFigiParser.ParseMappingValues(response.Body);
         _values[field.Value] = values;
         return values;
@@ -88,11 +87,9 @@ public sealed class OpenFigiClient(IOpenFigiTransport transport, bool hasApiKey)
 
     // ------------------------------------------------------------------
 
-    private async Task<FigiPage> PageAsync(string path, FigiQuery query, bool queryRequired, string? start, Func<string, FigiPage> parse,
-                                           CancellationToken cancellation)
+    private async Task<FigiPage> PageAsync(string path, string body, Func<string, FigiPage> parse, CancellationToken cancellation)
     {
-        var response = await SendAsync(new OpenFigiRequest(HttpMethod.Post, path, OpenFigiRequests.QueryBody(query, queryRequired, start),
-                                                           OpenFigiCallGroup.Search), cancellation);
+        var response = await SendAsync(new OpenFigiRequest(HttpMethod.Post, path, body, OpenFigiCallGroup.Search), cancellation);
         return parse(response.Body);
     }
 

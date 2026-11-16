@@ -97,6 +97,9 @@ Each response has a parser that needs no client and no network:
 | `OpenFigiParser.ParseRecord(element)` | one record; `FigiRecord.Raw` keeps it as received |
 | `OpenFigiParser.ParseError(status, body)` | a refused request's body, as the `OpenFigiException` the client throws |
 
+`OpenFigiException.StatusCode` is the HTTP status of a refused request, and null when the response came back but its
+content is an error (a search's `error`) or not what the API documents.
+
 A miss is `MappingNotFound` whether the API sends it as a `warning` (as it does) or as the `error` "No identifier found."
 (as its documentation's example shows).
 
@@ -105,6 +108,9 @@ A miss is `MappingNotFound` whether the API sends it as a `warning` (as it does)
 ```csharp
 public sealed class MyGatewayTransport(MyGateway gateway) : IOpenFigiTransport
 {
+    // whether the gateway sends an API key: the client then sends mapping jobs 100 to a request instead of 10
+    public bool SendsApiKey => gateway.HasOpenFigiKey;
+
     public async Task<OpenFigiResponse> SendAsync(OpenFigiRequest request, CancellationToken cancellation = default)
     {
         // send request.Method, request.Path and request.JsonBody your way; request.Group says which limit it counts against
@@ -113,11 +119,15 @@ public sealed class MyGatewayTransport(MyGateway gateway) : IOpenFigiTransport
     }
 }
 
-var client = new OpenFigiClient(new MyGatewayTransport(gateway), hasApiKey: true);
+var client = new OpenFigiClient(new MyGatewayTransport(gateway));
 ```
 
-The request bodies alone are `OpenFigiRequests.MappingBody(jobs)` and `OpenFigiRequests.QueryBody(query, ...)`, and the
-rules `OpenFigiRules.Check(...)`.
+The request bodies alone are `OpenFigiRequests.MappingBody(jobs)`, `SearchBody(query, start)` and
+`FilterBody(query, start)`; the rules `OpenFigiRules.Check(job)`, `CheckSearch(query)` and `CheckFilter(query)`.
+
+`HttpOpenFigiTransport` is `IDisposable`: dispose it when done, which closes the connections it opened. A client made by
+`OpenFigiClient.Create` keeps its transport for its own life; a program that makes many clients makes one transport and
+passes it to each.
 
 ## Limits
 
@@ -133,6 +143,23 @@ keyed by group (`openfigi:mapping`, `openfigi:search`), since the API counts req
 changes the limits, the attempts and the backoff, or turns limiting off (`LimitRequests = false`) for a caller that
 limits elsewhere. `OpenFigiClient.Create(options, handler)` takes the handler at the end of the pipeline, which a test
 replaces with a fake one.
+
+## Layout
+
+One type per file, in one namespace (`DeepSigma.OpenFigiAPI`), so a program needs one `using`; the folders organise the
+source:
+
+| Folder | What |
+|---|---|
+| (root) | `OpenFigiClient` |
+| `Codes/` | The open code types: `IdType`, `SecurityType2`, `MarketSector`, `OptionType`, `MappingField` |
+| `Requests/` | `MappingJob`, `FigiQuery`, `FigiFilters`, `NumberRange`, `DateRange`; `OpenFigiRules`; `OpenFigiRequests` (the bodies) |
+| `Results/` | `FigiRecord`, `FigiPage`, `MappingResult` and its cases, `OpenFigiException` |
+| `Parsing/` | `OpenFigiParser` |
+| `Transport/` | `IOpenFigiTransport`, `OpenFigiRequest`, `OpenFigiResponse`, `OpenFigiCallGroup`, `HttpOpenFigiTransport`, `OpenFigiOptions` |
+
+The tests mirror it (`Parsing/`, `Requests/`, `Client/`, `Transport/`, `Live/`), with the fakes and helpers in
+`TestSupport/` and the saved responses in `TestData/`.
 
 ## Tests
 

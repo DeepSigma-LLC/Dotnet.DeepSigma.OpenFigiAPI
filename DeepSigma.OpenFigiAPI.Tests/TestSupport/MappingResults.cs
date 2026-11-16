@@ -3,7 +3,7 @@ using Xunit.Sdk;
 namespace DeepSigma.OpenFigiAPI.Tests;
 
 /// <summary>A mapping result's case, or a test failure naming what it was instead.</summary>
-internal static class Results
+internal static class MappingResults
 {
     public static MappingFound Found(MappingResult result) => result is MappingFound found ? found : throw Unexpected("found", result);
     public static MappingNotFound NotFound(MappingResult result) => result is MappingNotFound notFound ? notFound : throw Unexpected("not found", result);

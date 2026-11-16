@@ -22,8 +22,8 @@ public sealed class LiveTests
     {
         var client = Client();
         var results = await client.MapAsync([MappingJob.Isin("US0378331005"), MappingJob.Ticker("ZQZQZQZQ", "US")], Cancellation);
-        Assert.Contains(Results.Found(results[0]).Records, record => record.Figi == "BBG000B9XRY4");
-        Results.NotFound(results[1]);
+        Assert.Contains(MappingResults.Found(results[0]).Records, record => record.Figi == "BBG000B9XRY4");
+        MappingResults.NotFound(results[1]);
 
         var page = await client.SearchPageAsync(new FigiQuery("IBM") { Filters = new FigiFilters { ExchangeCode = "US" } }, cancellation: Cancellation);
         Assert.NotEmpty(page.Records);

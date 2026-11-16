@@ -21,11 +21,18 @@ public static class OpenFigiRules
         CheckFilters(job.Filters, nameof(job));
     }
 
-    /// <summary>A search needs keywords; a filter may have none (<paramref name="queryRequired"/>).</summary>
-    public static void Check(FigiQuery query, bool queryRequired)
+    /// <summary>Checks a search: it needs keywords, at most <see cref="MaximumQueryTerms"/>, and its filters.</summary>
+    public static void CheckSearch(FigiQuery query)
     {
         ArgumentNullException.ThrowIfNull(query);
-        if (queryRequired && string.IsNullOrWhiteSpace(query.Query)) throw new ArgumentException("a search needs keywords", nameof(query));
+        if (string.IsNullOrWhiteSpace(query.Query)) throw new ArgumentException("a search needs keywords", nameof(query));
+        CheckFilter(query);
+    }
+
+    /// <summary>Checks a filter: keywords are optional, at most <see cref="MaximumQueryTerms"/>; and its filters.</summary>
+    public static void CheckFilter(FigiQuery query)
+    {
+        ArgumentNullException.ThrowIfNull(query);
         if (query.Query is { } text && text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length > MaximumQueryTerms)
             throw new ArgumentException($"a query may have at most {MaximumQueryTerms} terms", nameof(query));
         CheckFilters(query.Filters, nameof(query));

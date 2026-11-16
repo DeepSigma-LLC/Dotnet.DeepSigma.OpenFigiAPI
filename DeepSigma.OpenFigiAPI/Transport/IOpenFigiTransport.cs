@@ -1,20 +1,5 @@
 namespace DeepSigma.OpenFigiAPI;
 
-/// <summary>Which of the API's limits a call counts against: mapping (and the field values), or search and filter.</summary>
-public enum OpenFigiCallGroup
-{
-    /// <summary><c>/v3/mapping</c> and <c>/v3/mapping/values</c>.</summary>
-    Mapping,
-    /// <summary><c>/v3/search</c> and <c>/v3/filter</c>.</summary>
-    Search,
-}
-
-/// <summary>One call to the API: its method, path (<c>/v3/mapping</c>), JSON body (null for a GET) and limit group.</summary>
-public sealed record OpenFigiRequest(HttpMethod Method, string Path, string? JsonBody, OpenFigiCallGroup Group);
-
-/// <summary>What came back: the HTTP status, the body as text, and a 429's <c>retry-after</c>.</summary>
-public sealed record OpenFigiResponse(int StatusCode, string Body, TimeSpan? RetryAfter = null);
-
 /// <summary>
 /// How a call travels. <see cref="HttpOpenFigiTransport"/> sends it with an <see cref="HttpClient"/>, keeping to the API's
 /// limits; a program with its own gateway for vendor calls (quotas, retries, an archive of responses) implements this to
@@ -23,6 +8,10 @@ public sealed record OpenFigiResponse(int StatusCode, string Body, TimeSpan? Ret
 /// </summary>
 public interface IOpenFigiTransport
 {
+    /// <summary>Whether calls carry an API key: the API then takes 100 jobs a mapping request instead of 10, so the client
+    /// sends batches of that size.</summary>
+    bool SendsApiKey { get; }
+
     /// <summary>Sends the call and returns what the API answered, whatever its status.</summary>
     Task<OpenFigiResponse> SendAsync(OpenFigiRequest request, CancellationToken cancellation = default);
 }

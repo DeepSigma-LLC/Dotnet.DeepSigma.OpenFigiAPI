@@ -9,18 +9,6 @@ public sealed class ClientTests
 {
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
-    /// <summary>Answers each request with the next of its responses, or by a function of the request; keeps what was sent.</summary>
-    private sealed class FakeTransport(Func<OpenFigiRequest, OpenFigiResponse> answer) : IOpenFigiTransport
-    {
-        public List<OpenFigiRequest> Sent { get; } = [];
-
-        public Task<OpenFigiResponse> SendAsync(OpenFigiRequest request, CancellationToken cancellation = default)
-        {
-            Sent.Add(request);
-            return Task.FromResult(answer(request));
-        }
-    }
-
     /// <summary>A mapping answer: for each job, found with a FIGI made from its value, or not found when it starts with "missing".</summary>
     private static OpenFigiResponse MappingAnswer(OpenFigiRequest request)
     {
@@ -36,8 +24,8 @@ public sealed class ClientTests
     [InlineData(true, 250, 3)]
     public async Task JobsAreSentInBatchesAndReturnedInTheirOrder(bool hasKey, int jobCount, int expectedRequests)
     {
-        var transport = new FakeTransport(MappingAnswer);
-        var client = new OpenFigiClient(transport, hasKey);
+        var transport = new FakeTransport(MappingAnswer, sendsApiKey: hasKey);
+        var client = new OpenFigiClient(transport);
         var jobs = Enumerable.Range(1, jobCount).Select(i => MappingJob.Ticker(i % 7 == 0 ? $"missing{i}" : $"T{i}", "US")).ToList();
 
         var results = await client.MapAsync(jobs, Cancellation);
@@ -47,8 +35,8 @@ public sealed class ClientTests
         Assert.Equal(jobCount, results.Count);
         for (var i = 0; i < jobCount; i++)
         {
-            if (jobs[i].IdValue.StartsWith("missing")) Results.NotFound(results[i]);
-            else Assert.Equal("FIGI-" + jobs[i].IdValue, Assert.Single(Results.Found(results[i]).Records).Figi);
+            if (jobs[i].IdValue.StartsWith("missing")) MappingResults.NotFound(results[i]);
+            else Assert.Equal("FIGI-" + jobs[i].IdValue, Assert.Single(MappingResults.Found(results[i]).Records).Figi);
         }
     }
 
@@ -56,7 +44,7 @@ public sealed class ClientTests
     public async Task ABrokenJobIsRefusedBeforeAnyRequestIsSent()
     {
         var transport = new FakeTransport(MappingAnswer);
-        var client = new OpenFigiClient(transport, hasApiKey: false);
+        var client = new OpenFigiClient(transport);
         await Assert.ThrowsAsync<ArgumentException>(() => client.MapAsync([MappingJob.Isin("US0378331005"), new MappingJob(IdType.BaseTicker, "AAPL")], Cancellation));
         Assert.Empty(transport.Sent);
     }
@@ -64,7 +52,7 @@ public sealed class ClientTests
     [Fact]
     public async Task ARefusedRequestThrowsWithItsStatus()
     {
-        var client = new OpenFigiClient(new FakeTransport(_ => new OpenFigiResponse(401, ParserTests.Read("error_401.txt"))), hasApiKey: true);
+        var client = new OpenFigiClient(new FakeTransport(_ => new OpenFigiResponse(401, TestData.Read("error_401.txt")), sendsApiKey: true));
         var refused = await Assert.ThrowsAsync<OpenFigiException>(() => client.MapAsync(MappingJob.Isin("US0378331005"), Cancellation));
         Assert.Equal(401, refused.StatusCode);
         Assert.Contains("Invalid API key.", refused.Message);
@@ -84,7 +72,7 @@ public sealed class ClientTests
             var body = JsonDocument.Parse(request.JsonBody!).RootElement;
             return new OpenFigiResponse(200, pages[body.TryGetProperty("start", out var start) ? start.GetString()! : ""]);
         });
-        var client = new OpenFigiClient(transport, hasApiKey: false);
+        var client = new OpenFigiClient(transport);
 
         var all = await client.SearchAsync(new FigiQuery("example"), cancellation: Cancellation).Select(record => record.Figi).ToListAsync(Cancellation);
         Assert.Equal(["A", "B", "C", "D", "E"], all);
@@ -104,8 +92,8 @@ public sealed class ClientTests
     [Fact]
     public async Task AFieldsValuesAreAskedForOnceUnlessRefreshed()
     {
-        var transport = new FakeTransport(_ => new OpenFigiResponse(200, ParserTests.Read("values_exch_code.json")));
-        var client = new OpenFigiClient(transport, hasApiKey: false);
+        var transport = new FakeTransport(_ => new OpenFigiResponse(200, TestData.Read("values_exch_code.json")));
+        var client = new OpenFigiClient(transport);
 
         Assert.Contains("US", await client.MappingValuesAsync(MappingField.ExchangeCode, cancellation: Cancellation));
         await client.MappingValuesAsync(MappingField.ExchangeCode, cancellation: Cancellation);

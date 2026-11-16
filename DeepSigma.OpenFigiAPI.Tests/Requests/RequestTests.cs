@@ -33,9 +33,9 @@ public sealed class RequestTests
     {
         var query = new FigiQuery("apple") { Filters = new FigiFilters { MarketSector = MarketSector.Equity, IncludeUnlistedEquities = true } };
         Assert.Equal("""{"query":"apple","start":"abc","marketSecDes":"Equity","includeUnlistedEquities":true}""",
-                     OpenFigiRequests.QueryBody(query, queryRequired: true, start: "abc"));
+                     OpenFigiRequests.SearchBody(query, start: "abc"));
         Assert.Equal("""{"securityType2":"Common Stock"}""",
-                     OpenFigiRequests.QueryBody(new FigiQuery(null) { Filters = new FigiFilters { SecurityType2 = SecurityType2.CommonStock } }, queryRequired: false));
+                     OpenFigiRequests.FilterBody(new FigiQuery(null) { Filters = new FigiFilters { SecurityType2 = SecurityType2.CommonStock } }));
     }
 
     [Fact]
@@ -55,10 +55,9 @@ public sealed class RequestTests
                 "at most a year");
         OpenFigiRules.Check(MappingJob.Isin("X") with { Filters = new FigiFilters { Maturity = new DateRange(new DateOnly(2026, 1, 1), null) } });
 
-        Assert.Contains("needs keywords", Assert.Throws<ArgumentException>(() => OpenFigiRules.Check(new FigiQuery(""), queryRequired: true)).Message);
-        Assert.Contains("at most 12", Assert.Throws<ArgumentException>(() => OpenFigiRules.Check(new FigiQuery(string.Join(' ', Enumerable.Range(1, 13))),
-                                                                                                  queryRequired: true)).Message);
-        OpenFigiRules.Check(new FigiQuery(null), queryRequired: false);
+        Assert.Contains("needs keywords", Assert.Throws<ArgumentException>(() => OpenFigiRules.CheckSearch(new FigiQuery(""))).Message);
+        Assert.Contains("at most 12", Assert.Throws<ArgumentException>(() => OpenFigiRules.CheckFilter(new FigiQuery(string.Join(' ', Enumerable.Range(1, 13))))).Message);
+        OpenFigiRules.CheckFilter(new FigiQuery(null));
     }
 
     [Fact]
