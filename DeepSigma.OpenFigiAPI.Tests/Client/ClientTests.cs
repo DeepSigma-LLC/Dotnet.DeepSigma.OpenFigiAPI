@@ -31,7 +31,7 @@ public sealed class ClientTests
         var results = await client.MapAsync(jobs, Cancellation);
 
         Assert.Equal(expectedRequests, transport.Sent.Count);
-        Assert.All(transport.Sent, request => Assert.Equal(("/v3/mapping", OpenFigiCallGroup.Mapping), (request.Path, request.Group)));
+        Assert.All(transport.Sent, request => Assert.Equal(("/v3/mapping", OpenFigiCallGroup.Mapping, OpenFigiCall.Mapping), (request.Path, request.Group, request.Call)));
         Assert.Equal(jobCount, results.Count);
         for (var i = 0; i < jobCount; i++)
         {
@@ -76,14 +76,14 @@ public sealed class ClientTests
 
         var all = await client.SearchAsync(new FigiQuery("example"), cancellation: Cancellation).Select(record => record.Figi).ToListAsync(Cancellation);
         Assert.Equal(["A", "B", "C", "D", "E"], all);
-        Assert.All(transport.Sent, request => Assert.Equal(("/v3/search", OpenFigiCallGroup.Search), (request.Path, request.Group)));
+        Assert.All(transport.Sent, request => Assert.Equal(("/v3/search", OpenFigiCallGroup.Search, OpenFigiCall.Search), (request.Path, request.Group, request.Call)));
         Assert.Equal(3, transport.Sent.Count);
 
         transport.Sent.Clear();
         var three = await client.FilterAsync(new FigiQuery(null), maxResults: 3, cancellation: Cancellation).Select(record => record.Figi).ToListAsync(Cancellation);
         Assert.Equal(["A", "B", "C"], three);
         Assert.Equal(2, transport.Sent.Count);                                              // the third page is never asked for
-        Assert.All(transport.Sent, request => Assert.Equal("/v3/filter", request.Path));
+        Assert.All(transport.Sent, request => Assert.Equal(("/v3/filter", OpenFigiCall.Filter), (request.Path, request.Call)));
 
         var first = await client.SearchPageAsync(new FigiQuery("example"), cancellation: Cancellation);
         Assert.Equal("p2", first.Next);
@@ -98,6 +98,7 @@ public sealed class ClientTests
         Assert.Contains("US", await client.MappingValuesAsync(MappingField.ExchangeCode, cancellation: Cancellation));
         await client.MappingValuesAsync(MappingField.ExchangeCode, cancellation: Cancellation);
         Assert.Equal(("/v3/mapping/values/exchCode", "GET"), (Assert.Single(transport.Sent).Path, transport.Sent[0].Method.Method));
+        Assert.Equal((OpenFigiCall.MappingValues, MappingField.ExchangeCode), (transport.Sent[0].Call, transport.Sent[0].Field));
         await client.MappingValuesAsync(MappingField.ExchangeCode, refresh: true, cancellation: Cancellation);
         Assert.Equal(2, transport.Sent.Count);
     }

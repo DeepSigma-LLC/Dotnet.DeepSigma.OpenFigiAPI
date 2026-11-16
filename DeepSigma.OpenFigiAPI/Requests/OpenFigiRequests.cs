@@ -14,14 +14,21 @@ public static class OpenFigiRequests
     {
         ArgumentNullException.ThrowIfNull(jobs);
         var array = new JsonArray();
-        foreach (var job in jobs)
-        {
-            OpenFigiRules.Check(job);
-            var item = new JsonObject { ["idType"] = job.IdType.Value, ["idValue"] = job.IdValue };
-            WriteFilters(item, job.Filters);
-            array.Add(item);
-        }
+        foreach (var job in jobs) array.Add(JobObject(job));
         return array.ToJsonString();
+    }
+
+    /// <summary>One job as the mapping body carries it (<c>{"idType": ..., "idValue": ..., "micCode": ...}</c>): to store
+    /// or log a job, or to key a cache by it. <see cref="OpenFigiParser.ParseMappingJob(string)"/> reads it back.</summary>
+    public static string MappingJobJson(MappingJob job) => JobObject(job).ToJsonString();
+
+    private static JsonObject JobObject(MappingJob job)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        OpenFigiRules.Check(job);
+        var item = new JsonObject { ["idType"] = job.IdType.Value, ["idValue"] = job.IdValue };
+        WriteFilters(item, job.Filters);
+        return item;
     }
 
     /// <summary>The body of <c>POST /v3/search</c>, from the page <paramref name="start"/> names (the previous page's

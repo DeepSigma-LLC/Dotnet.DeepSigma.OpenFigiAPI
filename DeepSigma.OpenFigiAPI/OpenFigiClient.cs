@@ -42,7 +42,7 @@ public sealed class OpenFigiClient(IOpenFigiTransport transport)
         var results = new List<MappingResult>(jobs.Count);
         foreach (var batch in jobs.Chunk(JobsPerRequest))
         {
-            var response = await SendAsync(new OpenFigiRequest(HttpMethod.Post, ApiPaths.Mapping, OpenFigiRequests.MappingBody(batch), OpenFigiCallGroup.Mapping),
+            var response = await SendAsync(new OpenFigiRequest(HttpMethod.Post, ApiPaths.Mapping, OpenFigiRequests.MappingBody(batch), OpenFigiCallGroup.Mapping) { Call = OpenFigiCall.Mapping },
                                            cancellation);
             results.AddRange(OpenFigiParser.ParseMapping(response.Body, batch.Length));
         }
@@ -58,11 +58,11 @@ public sealed class OpenFigiClient(IOpenFigiTransport transport)
     /// <summary>One page of a search (<c>/v3/search</c>): from the first page, or from <paramref name="start"/> (a page's
     /// <see cref="FigiPage.Next"/>).</summary>
     public Task<FigiPage> SearchPageAsync(FigiQuery query, string? start = null, CancellationToken cancellation = default) =>
-        PageAsync(ApiPaths.Search, OpenFigiRequests.SearchBody(query, start), OpenFigiParser.ParseSearchPage, cancellation);
+        PageAsync(OpenFigiCall.Search, OpenFigiRequests.SearchBody(query, start), OpenFigiParser.ParseSearchPage, cancellation);
 
     /// <summary>One page of a filter (<c>/v3/filter</c>, sorted by FIGI, with the total).</summary>
     public Task<FigiPage> FilterPageAsync(FigiQuery query, string? start = null, CancellationToken cancellation = default) =>
-        PageAsync(ApiPaths.Filter, OpenFigiRequests.FilterBody(query, start), OpenFigiParser.ParseFilterPage, cancellation);
+        PageAsync(OpenFigiCall.Filter, OpenFigiRequests.FilterBody(query, start), OpenFigiParser.ParseFilterPage, cancellation);
 
     /// <summary>Every record of a search, page after page, up to <paramref name="maxResults"/> when given.</summary>
     public IAsyncEnumerable<FigiRecord> SearchAsync(FigiQuery query, int? maxResults = null, CancellationToken cancellation = default) =>
@@ -79,7 +79,7 @@ public sealed class OpenFigiClient(IOpenFigiTransport transport)
     public async Task<IReadOnlyList<string>> MappingValuesAsync(MappingField field, bool refresh = false, CancellationToken cancellation = default)
     {
         if (!refresh && _values.TryGetValue(field.Value, out var known)) return known;
-        var response = await SendAsync(new OpenFigiRequest(HttpMethod.Get, ApiPaths.MappingValues(field), null, OpenFigiCallGroup.Mapping), cancellation);
+        var response = await SendAsync(new OpenFigiRequest(HttpMethod.Get, ApiPaths.MappingValues(field), null, OpenFigiCallGroup.Mapping) { Call = OpenFigiCall.MappingValues, Field = field }, cancellation);
         var values = OpenFigiParser.ParseMappingValues(response.Body);
         _values[field.Value] = values;
         return values;
@@ -87,9 +87,10 @@ public sealed class OpenFigiClient(IOpenFigiTransport transport)
 
     // ------------------------------------------------------------------
 
-    private async Task<FigiPage> PageAsync(string path, string body, Func<string, FigiPage> parse, CancellationToken cancellation)
+    private async Task<FigiPage> PageAsync(OpenFigiCall call, string body, Func<string, FigiPage> parse, CancellationToken cancellation)
     {
-        var response = await SendAsync(new OpenFigiRequest(HttpMethod.Post, path, body, OpenFigiCallGroup.Search), cancellation);
+        var path = call == OpenFigiCall.Search ? ApiPaths.Search : ApiPaths.Filter;
+        var response = await SendAsync(new OpenFigiRequest(HttpMethod.Post, path, body, OpenFigiCallGroup.Search) { Call = call }, cancellation);
         return parse(response.Body);
     }
 

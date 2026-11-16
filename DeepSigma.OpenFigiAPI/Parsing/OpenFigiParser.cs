@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 
 namespace DeepSigma.OpenFigiAPI;
@@ -36,6 +37,84 @@ public static class OpenFigiParser
         if (Text(element, "error") is { } error)
             return string.Equals(error.Trim(), NoIdentifierFound, StringComparison.OrdinalIgnoreCase) ? new MappingNotFound(error) : new MappingFailed(error);
         return new MappingFailed("a mapping result has no data, warning or error");
+    }
+
+    /// <summary>One job as the mapping body carries it (<see cref="OpenFigiRequests.MappingJobJson"/>): a stored or logged job
+    /// read back. A field the API does not have is refused, as the API would refuse it.</summary>
+    public static MappingJob ParseMappingJob(string json)
+    {
+        using var document = Parse(json);
+        return ParseMappingJob(document.RootElement);
+    }
+
+    /// <inheritdoc cref="ParseMappingJob(string)"/>
+    public static MappingJob ParseMappingJob(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object) throw new OpenFigiException(null, $"a mapping job is a JSON object, not {element.ValueKind}");
+        var idType = Text(element, "idType") ?? throw new OpenFigiException(null, "a mapping job has no idType");
+        var idValue = Text(element, "idValue") ?? throw new OpenFigiException(null, "a mapping job has no idValue");
+        var filters = new FigiFilters();
+        foreach (var property in element.EnumerateObject())
+        {
+            var value = property.Value;
+            filters = property.Name switch
+            {
+                "idType" or "idValue" => filters,
+                "exchCode" => filters with { ExchangeCode = JobText(property) },
+                "micCode" => filters with { MicCode = JobText(property) },
+                "currency" => filters with { Currency = JobText(property) },
+                "marketSecDes" => filters with { MarketSector = new MarketSector(JobText(property)) },
+                "securityType" => filters with { SecurityType = JobText(property) },
+                "securityType2" => filters with { SecurityType2 = new SecurityType2(JobText(property)) },
+                "includeUnlistedEquities" => filters with
+                {
+                    IncludeUnlistedEquities = value.ValueKind is JsonValueKind.True or JsonValueKind.False
+                        ? value.GetBoolean()
+                        : throw new OpenFigiException(null, "includeUnlistedEquities is true or false"),
+                },
+                "optionType" => filters with { OptionType = new OptionType(JobText(property)) },
+                "strike" => filters with { Strike = Numbers(property) },
+                "contractSize" => filters with { ContractSize = Numbers(property) },
+                "coupon" => filters with { Coupon = Numbers(property) },
+                "expiration" => filters with { Expiration = Dates(property) },
+                "maturity" => filters with { Maturity = Dates(property) },
+                "stateCode" => filters with { StateCode = JobText(property) },
+                var other => throw new OpenFigiException(null, $"a mapping job has no field {other}"),
+            };
+        }
+        return new MappingJob(new IdType(idType), idValue) { Filters = filters };
+    }
+
+    private static string JobText(JsonProperty property) =>
+        property.Value.ValueKind == JsonValueKind.String ? property.Value.GetString()! : throw new OpenFigiException(null, $"{property.Name} is text");
+
+    private static (JsonElement From, JsonElement To) Ends(JsonProperty property) =>
+        property.Value.ValueKind == JsonValueKind.Array && property.Value.GetArrayLength() == 2
+            ? (property.Value[0], property.Value[1])
+            : throw new OpenFigiException(null, $"{property.Name} is a pair [from, to]");
+
+    private static NumberRange Numbers(JsonProperty property)
+    {
+        var (from, to) = Ends(property);
+        decimal? End(JsonElement end) => end.ValueKind switch
+        {
+            JsonValueKind.Null => null,
+            JsonValueKind.Number => end.GetDecimal(),
+            _ => throw new OpenFigiException(null, $"{property.Name}: an end is a number or null"),
+        };
+        return new NumberRange(End(from), End(to));
+    }
+
+    private static DateRange Dates(JsonProperty property)
+    {
+        var (from, to) = Ends(property);
+        DateOnly? End(JsonElement end) => end.ValueKind switch
+        {
+            JsonValueKind.Null => null,
+            JsonValueKind.String when DateOnly.TryParseExact(end.GetString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) => date,
+            _ => throw new OpenFigiException(null, $"{property.Name}: an end is a date (yyyy-mm-dd) or null"),
+        };
+        return new DateRange(End(from), End(to));
     }
 
     /// <summary>A <c>/v3/search</c> response: a page of records and the next page's token. An <c>error</c> in it throws.</summary>

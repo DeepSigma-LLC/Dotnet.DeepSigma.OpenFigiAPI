@@ -97,6 +97,18 @@ Each response has a parser that needs no client and no network:
 | `OpenFigiParser.ParseRecord(element)` | one record; `FigiRecord.Raw` keeps it as received |
 | `OpenFigiParser.ParseError(status, body)` | a refused request's body, as the `OpenFigiException` the client throws |
 
+And back again, for a program that stores what it asked and what it got (a cache, an archive), so a stored answer is
+read later by the same parser as a live one:
+
+| Method | Writes | Read back by |
+|---|---|---|
+| `OpenFigiRequests.MappingJobJson(job)` | one job as the mapping body carries it | `OpenFigiParser.ParseMappingJob(json)` |
+| `OpenFigiResponses.MappingResultJson(result)` | one answer in the API's shape: `{"data": [...]}`, `{"warning": ...}` or `{"error": ...}` | `OpenFigiParser.ParseMappingResult(element)` |
+| `OpenFigiResponses.MappingResponseJson(results)` | a whole mapping response | `OpenFigiParser.ParseMapping(json)` |
+
+A record keeps every field it came with, including ones this package does not know (`FigiRecord.Raw`). A job read back
+with a field the API does not have is refused, as the API would refuse it.
+
 `OpenFigiException.StatusCode` is the HTTP status of a refused request, and null when the response came back but its
 content is an error (a search's `error`) or not what the API documents.
 
@@ -113,7 +125,8 @@ public sealed class MyGatewayTransport(MyGateway gateway) : IOpenFigiTransport
 
     public async Task<OpenFigiResponse> SendAsync(OpenFigiRequest request, CancellationToken cancellation = default)
     {
-        // send request.Method, request.Path and request.JsonBody your way; request.Group says which limit it counts against
+        // send request.Method, request.Path and request.JsonBody your way; request.Group says which limit it counts against,
+        // request.Call which call it is (Mapping, MappingValues, Search, Filter) and request.Field, for MappingValues, the field
         var answer = await gateway.SendAsync(request.Method, request.Path, request.JsonBody, cancellation);
         return new OpenFigiResponse(answer.Status, answer.Body, answer.RetryAfter);
     }
@@ -128,6 +141,14 @@ The request bodies alone are `OpenFigiRequests.MappingBody(jobs)`, `SearchBody(q
 `HttpOpenFigiTransport` is `IDisposable`: dispose it when done, which closes the connections it opened. A client made by
 `OpenFigiClient.Create` keeps its transport for its own life; a program that makes many clients makes one transport and
 passes it to each.
+
+## Market codes
+
+A job may name the market by Bloomberg's exchange code (`ExchangeCode`, `US`) or by its ISO 10383 MIC (`MicCode`). OpenFIGI
+files a listing under the MIC of the market that lists it, which for some exchanges is a segment, not the operator: a
+Nasdaq stock is found on its tier (`XNGS` Global Select, `XNMS` Global Market, `XNCM` Capital Market) and on `XNAS`
+on nothing. `ExchangeCode = "US"` finds the composite FIGI on any US exchange. Which segment a vendor's exchange name
+means is the caller's knowledge; this package passes the code as given.
 
 ## Limits
 
@@ -155,8 +176,8 @@ source:
 | `Codes/` | The open code types: `IdType`, `SecurityType2`, `MarketSector`, `OptionType`, `MappingField` |
 | `Requests/` | `MappingJob`, `FigiQuery`, `FigiFilters`, `NumberRange`, `DateRange`; `OpenFigiRules`; `OpenFigiRequests` (the bodies) |
 | `Results/` | `FigiRecord`, `FigiPage`, `MappingResult` and its cases, `OpenFigiException` |
-| `Parsing/` | `OpenFigiParser` |
-| `Transport/` | `IOpenFigiTransport`, `OpenFigiRequest`, `OpenFigiResponse`, `OpenFigiCallGroup`, `HttpOpenFigiTransport`, `OpenFigiOptions` |
+| `Parsing/` | `OpenFigiParser`, `OpenFigiResponses` |
+| `Transport/` | `IOpenFigiTransport`, `OpenFigiRequest`, `OpenFigiResponse`, `OpenFigiCall`, `OpenFigiCallGroup`, `HttpOpenFigiTransport`, `OpenFigiOptions` |
 
 The tests mirror it (`Parsing/`, `Requests/`, `Client/`, `Transport/`, `Live/`), with the fakes and helpers in
 `TestSupport/` and the saved responses in `TestData/`.
@@ -168,8 +189,9 @@ dotnet test --solution DeepSigma.OpenFigiAPI.slnx
 ```
 
 The parsers are tested on saved responses in `DeepSigma.OpenFigiAPI.Tests/TestData` (recorded from the live API, and
-cut-down ones for rarer shapes), the client on a fake transport, the HTTP transport on a fake handler. One test calls
-the live API, only when `OPENFIGI_LIVE_TEST=1` is set (with `OPENFIGI_API_KEY` for the keyed limits).
+cut-down ones for rarer shapes), and what the package writes (a job, an answer) is read back as the same thing; the
+client on a fake transport, the HTTP transport on a fake handler. One test calls the live API, only when
+`OPENFIGI_LIVE_TEST=1` is set (with `OPENFIGI_API_KEY` for the keyed limits).
 
 ## Licence
 
